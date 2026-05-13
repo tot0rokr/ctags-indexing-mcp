@@ -1,9 +1,9 @@
 # ctags-indexing-mcp
 
 MCP server that builds cscope/ctags indexes for C/C++/Python projects and wires
-them into vim/neovim. Tells Claude how to index a new repo on demand and gives
-you a one-line shell activation that makes `vim` auto-attach the indexes from
-any cwd.
+them into vim/neovim. Exposes the indexing workflow to any MCP-capable agent
+(Claude Code, Claude Desktop, Cursor, Continue, Windsurf, …) and gives you a
+one-line shell activation that makes `vim` auto-attach the indexes from any cwd.
 
 ## What it does
 
@@ -27,16 +27,19 @@ any cwd.
 
 ## Install
 
-Hand [`INSTALLATION.md`](./INSTALLATION.md) to your coding agent (Claude Code,
-Cursor, etc.) and ask it to follow the guide end-to-end. It is written to be
-agent-followable: prerequisite probe, clone, venv + editable install, MCP
-registration, and a smoke test — all idempotent. Re-running it on an
+Hand [`INSTALLATION.md`](./INSTALLATION.md) to your coding agent and ask it
+to follow the guide end-to-end. It is written to be agent-followable and
+**MCP-client-agnostic** — step 4 has one sub-section per client (Claude
+Code, Claude Desktop, Cursor, Continue, Windsurf, plus a generic JSON
+recipe for anything else), so the same file works no matter which agent
+the user is running it from. All steps are idempotent; re-running on an
 already-installed machine just updates and reconnects.
 
-Concretely, in Claude Code:
+Concretely, paste this into your agent:
 
 > "Read INSTALLATION.md from https://github.com/tot0rokr/ctags-indexing-mcp
-> and install + register the MCP server."
+> and install + register the MCP server in whatever client you are running
+> inside."
 
 Manual install is also fine if you prefer; the same commands are in
 INSTALLATION.md. After installation, restart your MCP client so it picks up
@@ -44,12 +47,12 @@ the new server.
 
 ## Typical session
 
-Inside Claude, just ask:
+Inside your MCP client (Claude Code, Cursor, etc.), just ask:
 
 > "Index this project at ~/work/foo and set me up so vim auto-attaches."
 
-Claude will call `analyze` → `index_create` → `editor_setup` in sequence. Then
-in your shell:
+The agent will call `analyze` → `index_create` → `editor_setup` in sequence.
+Then in your shell:
 
 ```bash
 source ~/work/foo/.codeindex/activate.sh

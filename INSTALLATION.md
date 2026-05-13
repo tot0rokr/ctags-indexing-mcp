@@ -9,10 +9,18 @@ read the error and apply the matching entry in "Troubleshooting" at the bottom.
 ## 0. Assumptions
 
 - Linux or macOS shell (bash/zsh).
-- Network access to PyPI.
-- The user has `claude` (Claude Code) on `$PATH`. Check with
-  `command -v claude` — if missing, follow Claude Code's own install guide
-  first; do **not** try to install this MCP server without it.
+- Network access to PyPI / GitHub.
+- The user is already running **some** MCP-capable agent (Claude Code,
+  Claude Desktop, Cursor, Continue, Windsurf, or another client that speaks
+  the Model Context Protocol). This guide adds the server to that client.
+  If no MCP client is installed yet, install one first — this server is
+  useless without one.
+
+> **For the agent following this file:** steps 1–3 are client-agnostic and
+> always run. Step 4 has one sub-section per MCP client (4A–4F); pick the
+> one that matches the client **you are running inside**. If multiple
+> clients are installed on the machine and you can't tell which one the
+> user wants, ask the user. Step 5 is client-agnostic verification.
 
 ---
 
@@ -105,36 +113,187 @@ echo "server boots OK"
 
 ---
 
-## 4. Register with Claude Code
+## 4. Register with your MCP client
 
-Use the `user` scope so the server is available in **all** projects, not just
-the current directory. The `--` separates `claude mcp add` flags from the
-subprocess command.
+Every MCP client ultimately consumes the **same** stdio payload:
 
-```bash
-# Remove any prior registration so this is idempotent
-claude mcp remove -s user ctags-indexing 2>/dev/null || true
-
-claude mcp add -s user ctags-indexing -- "$BIN"
+```json
+{
+  "command": "<BIN value from step 3>",
+  "args": [],
+  "env": {}
+}
 ```
 
-Verify:
+…stored under the key `mcpServers.ctags-indexing` in some client-specific
+config file (or, for Claude Code, written via a CLI). Pick the sub-section
+that matches your client. All sub-sections are **idempotent** — re-running
+them overwrites the previous registration in place.
+
+Optional: detect which clients look installed on this machine (purely
+informational, does not change anything):
 
 ```bash
-claude mcp list | grep -E "^ctags-indexing" || { echo "not registered"; exit 1; }
+present=()
+command -v claude >/dev/null                                   && present+=("4A claude-code")
+[[ -d "$HOME/Library/Application Support/Claude" \
+   || -d "$HOME/.config/Claude" \
+   || -d "$APPDATA/Claude" ]]                                   && present+=("4B claude-desktop")
+[[ -d "$HOME/.cursor" ]]                                        && present+=("4C cursor")
+[[ -d "$HOME/.continue" ]]                                      && present+=("4D continue")
+[[ -d "$HOME/.codeium/windsurf" ]]                              && present+=("4E windsurf")
+printf 'detected:\n'; printf '  %s\n' "${present[@]:-(none — fall back to 4F generic)}"
+```
+
+### 4A. Claude Code
+
+```bash
+claude mcp remove -s user ctags-indexing 2>/dev/null || true
+claude mcp add    -s user ctags-indexing -- "$BIN"
+claude mcp list | grep -q "^ctags-indexing" || { echo "not registered"; exit 1; }
 claude mcp get ctags-indexing   # spawns the server briefly for a health check
 ```
 
-A healthy `claude mcp get` output ends with something like
-`✓ Connected · 5 tools`.
+A healthy `claude mcp get` output ends with `✓ Connected · 5 tools`.
+
+### 4B. Claude Desktop
+
+Edit the desktop config JSON. The location depends on OS:
+
+| OS      | Path                                                         |
+|---------|--------------------------------------------------------------|
+| macOS   | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Linux   | `~/.config/Claude/claude_desktop_config.json`                |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json`                |
+
+Idempotent merge with Python (uses the venv we just built so `json` is
+guaranteed available):
+
+```bash
+case "$(uname -s)" in
+    Darwin) CFG="$HOME/Library/Application Support/Claude/claude_desktop_config.json" ;;
+    Linux)  CFG="$HOME/.config/Claude/claude_desktop_config.json" ;;
+    *)      CFG="${APPDATA:-$HOME}/Claude/claude_desktop_config.json" ;;
+esac
+mkdir -p "$(dirname "$CFG")"
+"$INSTALL_DIR/.venv/bin/python" - "$CFG" "$BIN" <<'PY'
+import json, os, sys
+cfg_path, bin_path = sys.argv[1], sys.argv[2]
+cfg = {}
+if os.path.exists(cfg_path):
+    with open(cfg_path) as f:
+        try: cfg = json.load(f)
+        except json.JSONDecodeError: cfg = {}
+cfg.setdefault("mcpServers", {})["ctags-indexing"] = {
+    "command": bin_path, "args": [], "env": {},
+}
+with open(cfg_path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"wrote {cfg_path}")
+PY
+```
+
+**Restart Claude Desktop** so it re-reads the config.
+
+### 4C. Cursor
+
+```bash
+CFG="$HOME/.cursor/mcp.json"
+mkdir -p "$(dirname "$CFG")"
+"$INSTALL_DIR/.venv/bin/python" - "$CFG" "$BIN" <<'PY'
+import json, os, sys
+cfg_path, bin_path = sys.argv[1], sys.argv[2]
+cfg = {}
+if os.path.exists(cfg_path):
+    with open(cfg_path) as f:
+        try: cfg = json.load(f)
+        except json.JSONDecodeError: cfg = {}
+cfg.setdefault("mcpServers", {})["ctags-indexing"] = {
+    "command": bin_path, "args": [], "env": {},
+}
+with open(cfg_path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"wrote {cfg_path}")
+PY
+```
+
+**Restart Cursor** (or toggle MCP in Settings → MCP) to pick it up.
+
+### 4D. Continue (VS Code / JetBrains)
+
+Continue reads `~/.continue/config.json` (global) or `.continue/config.json`
+(per workspace). The same Python snippet works — choose the path the user
+prefers:
+
+```bash
+CFG="$HOME/.continue/config.json"     # or ".continue/config.json" for project-scoped
+mkdir -p "$(dirname "$CFG")"
+"$INSTALL_DIR/.venv/bin/python" - "$CFG" "$BIN" <<'PY'
+import json, os, sys
+cfg_path, bin_path = sys.argv[1], sys.argv[2]
+cfg = {}
+if os.path.exists(cfg_path):
+    with open(cfg_path) as f:
+        try: cfg = json.load(f)
+        except json.JSONDecodeError: cfg = {}
+cfg.setdefault("mcpServers", {})["ctags-indexing"] = {
+    "command": bin_path, "args": [], "env": {},
+}
+with open(cfg_path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"wrote {cfg_path}")
+PY
+```
+
+Reload Continue (`Cmd/Ctrl+Shift+P` → "Continue: Reload").
+
+### 4E. Windsurf (Codeium)
+
+```bash
+CFG="$HOME/.codeium/windsurf/mcp_config.json"
+mkdir -p "$(dirname "$CFG")"
+"$INSTALL_DIR/.venv/bin/python" - "$CFG" "$BIN" <<'PY'
+import json, os, sys
+cfg_path, bin_path = sys.argv[1], sys.argv[2]
+cfg = {}
+if os.path.exists(cfg_path):
+    with open(cfg_path) as f:
+        try: cfg = json.load(f)
+        except json.JSONDecodeError: cfg = {}
+cfg.setdefault("mcpServers", {})["ctags-indexing"] = {
+    "command": bin_path, "args": [], "env": {},
+}
+with open(cfg_path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"wrote {cfg_path}")
+PY
+```
+
+Restart Windsurf.
+
+### 4F. Generic (any other MCP-capable client)
+
+The client almost certainly has a JSON config with an `mcpServers` (or
+similarly named) map. Add:
+
+```json
+"ctags-indexing": {
+  "command": "<value of $BIN from step 3>",
+  "args": [],
+  "env": {}
+}
+```
+
+Substitute `$BIN` with the absolute path printed at the end of step 3
+(`<INSTALL_DIR>/.venv/bin/ctags-indexing-mcp`). Restart the client.
 
 ---
 
 ## 5. Smoke test against a real project
 
 Pick any C/C++/Python project the user owns. This calls the server through
-Python directly (does not require Claude to be running). It is optional but
-proves the tool plumbing end to end.
+Python directly (does not require any MCP client to be running). It is
+optional but proves the tool plumbing end to end.
 
 ```bash
 TEST_PROJECT="${1:-$HOME/work/some-project}"
@@ -174,39 +333,18 @@ After installation, the user (not the agent) should add the activation line
 Print the following two lines to the user:
 
 ```
-Index a project from Claude with:   "Index this project at <path>"
-After Claude finishes, run:         source <path>/.codeindex/activate.sh
-                                    (or add that to ~/.bashrc to make it permanent)
+Index a project from your agent with:   "Index this project at <path>"
+After the agent finishes, run:          source <path>/.codeindex/activate.sh
+                                        (or add that to ~/.bashrc to make it permanent)
 ```
-
----
-
-## Reference: other MCP clients
-
-The server speaks plain stdio MCP, so any compliant client works. The
-underlying config payload is always:
-
-```json
-{
-  "command": "<INSTALL_DIR>/.venv/bin/ctags-indexing-mcp",
-  "args": [],
-  "env": {}
-}
-```
-
-| Client          | Where to put it                                                          |
-|-----------------|---------------------------------------------------------------------------|
-| Claude Code     | `claude mcp add -s user ctags-indexing -- <BIN>` (this guide)                |
-| Claude Desktop  | `~/Library/Application Support/Claude/claude_desktop_config.json` (mac), `%APPDATA%\Claude\claude_desktop_config.json` (win). Key: `mcpServers.ctags-indexing` |
-| Cursor          | Settings → MCP → Add Server, paste the JSON above                        |
-| Continue (VSCode)| `.continue/config.json` → `mcpServers.ctags-indexing`                        |
 
 ---
 
 ## Troubleshooting
 
-**`claude: command not found`** — Install Claude Code first; this server is
-useless without an MCP client.
+**No MCP client is installed** — Install one first (Claude Code, Claude
+Desktop, Cursor, Continue, Windsurf, …); this server only does anything
+when an MCP client connects to it.
 
 **`ModuleNotFoundError: No module named 'mcp'` when running the binary** —
 The venv install failed or the wrong python is being used. Re-run step 3 and
@@ -216,9 +354,11 @@ confirm `head -1 $BIN` points at `$INSTALL_DIR/.venv/bin/python`.
 runtime dependency, not a Python dependency. Install via the package manager
 (step 1) and retry. `ctags` is similarly required for the `tags` half.
 
-**`claude mcp get ctags-indexing` shows "Failed to connect"** — Spawn the binary
-manually: `$BIN < /dev/null` — any Python traceback will tell you what's wrong
-(usually a stale venv after a pull; rerun `uv pip install -e .`).
+**Client doesn't see the server / "Failed to connect"** — Spawn the binary
+manually: `$BIN < /dev/null` — any Python traceback will tell you what's
+wrong (usually a stale venv after a pull; rerun `uv pip install -e .`).
+Also: most clients only re-read their config on restart — make sure you
+restarted Claude Desktop / Cursor / Windsurf / Continue after step 4.
 
 **`Cs db add` does nothing inside nvim** — The user is missing
 `cscope_maps.nvim`. The activation script is wrapped in `silent!` so it won't
@@ -231,9 +371,10 @@ directory). If the user opens a file that lives **outside** the project root,
 tags won't resolve; that's expected, not a bug.
 
 **Want to uninstall** —
-```bash
-claude mcp remove -s user ctags-indexing
-rm -rf "$INSTALL_DIR"
-```
+- Claude Code: `claude mcp remove -s user ctags-indexing`
+- Other clients: open the same config JSON you edited in step 4 and remove
+  the `mcpServers.ctags-indexing` entry, then restart the client.
+- Then: `rm -rf "$INSTALL_DIR"`.
+
 (`.codeindex/` directories inside individual projects are independent — delete
 them by hand if desired.)
