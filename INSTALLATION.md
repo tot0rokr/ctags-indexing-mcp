@@ -52,8 +52,8 @@ Pick **one** of A or B.
 ### A. Clone from git (preferred)
 
 ```bash
-INSTALL_DIR="${CODE_INDEX_MCP_DIR:-$HOME/work/ctags-indexing-mcp}"
-REPO_URL="<FILL THIS IN — git remote URL>"
+INSTALL_DIR="${CTAGS_INDEXING_MCP_DIR:-$HOME/work/ctags-indexing-mcp}"
+REPO_URL="https://github.com/tot0rokr/ctags-indexing-mcp.git"
 
 if [[ ! -d $INSTALL_DIR/.git ]]; then
     git clone "$REPO_URL" "$INSTALL_DIR"
