@@ -7,17 +7,27 @@ one-line shell activation that makes `vim` auto-attach the indexes from any cwd.
 
 ## What it does
 
-- **`analyze(path)`** — scan a project, return language counts, detected build
-  systems (cmake/meson/cargo/npm/yocto/…), and a recommended exclude list.
-  Read-only.
-- **`index_create(path, languages?, excludes?, output_dir?)`** — build the
-  indexes. Auto-detects languages/excludes if not given. Writes
-  `<project>/.codeindex/{cscope.out, tags, cscope.files, config.json}`.
-- **`index_regen(path)`** — rebuild using the previously saved `config.json`.
-- **`index_status(path)`** — list artifacts with sizes and mtimes.
-- **`editor_setup(path)`** — generate `<project>/.codeindex/activate.sh`. Source
+- **`analyze(path?)`** — scan a project, return language counts, detected
+  build systems (cmake/meson/cargo/npm/yocto/…), and a recommended exclude
+  list. Read-only.
+- **`index_create(path?, languages?, excludes?, output_dir?)`** — build the
+  indexes. Auto-detects languages/excludes if not given. Writes the
+  artifacts **directly into the project root**:
+  `<path>/{cscope.files, cscope.out, cscope.in.out, cscope.po.out, tags, .codeindex.config.json}`.
+  When `<path>` is a git repository, those names are appended to
+  `<path>/.gitignore` automatically (idempotent).
+- **`index_regen(path?)`** — rebuild using the previously saved
+  `.codeindex.config.json`.
+- **`index_status(path?)`** — list artifacts with sizes and mtimes.
+- **`editor_setup(path?)`** — generate `<path>/codeindex-activate.sh`. Source
   it once per shell. After sourcing, every `vim` invocation auto-attaches
   `tags` and the cscope DB regardless of cwd.
+
+The agent calling these tools is expected to figure out the user's project
+root itself and pass it as `path`. If `path` is omitted, the server falls
+back to its own cwd (the directory the MCP client launched it from); the
+response includes a `path_source` field so the agent can tell which one was
+used.
 
 ## Requirements
 
@@ -60,14 +70,14 @@ The agent will call `analyze` → `index_create` → `editor_setup` in sequence.
 Then in your shell:
 
 ```bash
-source ~/work/foo/.codeindex/activate.sh
+source ~/work/foo/codeindex-activate.sh
 vim some/file.c   # tags and cscope DB attached automatically
 ```
 
 To persist across shells, add the `source ...` line to `~/.bashrc` /
 `~/.zshrc`.
 
-## What `activate.sh` does
+## What `codeindex-activate.sh` does
 
 The script defines a shell function `vim` that wraps the real `vim`/`nvim`
 binary. It:
@@ -82,10 +92,18 @@ already have, this composes cleanly.
 
 ## `.gitignore`
 
-Add a single line to your project's `.gitignore`:
+`index_create` adds the artifact names to your project's `.gitignore`
+automatically when the project is a git repo. No manual setup needed. The
+entries it adds:
 
 ```
-.codeindex/
+cscope.files
+cscope.out
+cscope.in.out
+cscope.po.out
+tags
+codeindex-activate.sh
+.codeindex.config.json
 ```
 
 ## Limitations

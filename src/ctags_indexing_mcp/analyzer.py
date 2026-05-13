@@ -18,7 +18,6 @@ ALWAYS_EXCLUDE_DIRS: tuple[str, ...] = (
     "node_modules",
     ".venv", "venv", ".tox",
     ".idea", ".vscode",
-    ".codeindex",
     "build", "_build", "dist",
 )
 

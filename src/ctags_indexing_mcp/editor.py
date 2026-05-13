@@ -73,7 +73,7 @@ def generate_activate_script(
     project_root = project_root.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    activate_path = output_dir / "activate.sh"
+    activate_path = output_dir / "codeindex-activate.sh"
     body = ACTIVATE_TEMPLATE.format(
         activate_path=activate_path,
         tags_path=output_dir / "tags",

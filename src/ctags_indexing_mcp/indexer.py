@@ -2,14 +2,25 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .analyzer import LANGUAGE_EXTENSIONS, EXTRA_TEXT_EXTENSIONS
 
-DEFAULT_OUTPUT_DIRNAME = ".codeindex"
-
 CSCOPE_LANGS = {"c", "cpp", "asm"}
+
+# Artifacts written by build_index, relative to output_dir.
+# .gitignore auto-appends these (or patterns matching them) when the project
+# is a git repository.
+GITIGNORE_ENTRIES = (
+    "cscope.files",
+    "cscope.out",
+    "cscope.in.out",
+    "cscope.po.out",
+    "tags",
+    "codeindex-activate.sh",
+    ".codeindex.config.json",
+)
 
 
 @dataclass
@@ -22,7 +33,7 @@ class IndexResult:
     languages: list[str]
     excluded: list[str]
     warnings: list[str]
-    gitignore_status: str = "not_a_git_repo"
+    gitignore: dict = field(default_factory=lambda: {"status": "not_a_git_repo"})
 
     def to_dict(self) -> dict:
         return {
@@ -34,7 +45,7 @@ class IndexResult:
             "languages": self.languages,
             "excluded": self.excluded,
             "warnings": self.warnings,
-            "gitignore_status": self.gitignore_status,
+            "gitignore": self.gitignore,
         }
 
 
@@ -42,31 +53,42 @@ def _is_git_repo(root: Path) -> bool:
     return (root / ".git").exists()
 
 
-def _ensure_gitignored(root: Path, entry: str) -> str:
-    """Append `entry` to <root>/.gitignore if the project is a git repo and the
-    entry (or an equivalent variant) is not already listed. Returns one of:
-      - "not_a_git_repo"
-      - "already_present"
-      - "appended"
+def _ensure_gitignored(root: Path, entries: list[str]) -> dict:
+    """Append each entry in `entries` to <root>/.gitignore if the project is a
+    git repo and the entry (or an equivalent variant) is not already listed.
+    Returns a dict with:
+      - "status": "not_a_git_repo" | "ok"
+      - "appended":         [entries newly added]
+      - "already_present":  [entries that were already there]
     """
     if not _is_git_repo(root):
-        return "not_a_git_repo"
+        return {"status": "not_a_git_repo", "appended": [], "already_present": []}
 
     gitignore = root / ".gitignore"
-    canonical = entry.strip("/")
-    variants = {canonical, canonical + "/", "/" + canonical, "/" + canonical + "/"}
-
     existing = gitignore.read_text().splitlines() if gitignore.is_file() else []
-    for line in existing:
-        if line.strip() in variants:
-            return "already_present"
+    existing_set = {line.strip() for line in existing}
 
-    needs_leading_nl = bool(existing) and existing[-1] != ""
-    with gitignore.open("a") as f:
-        if needs_leading_nl:
-            f.write("\n")
-        f.write(f"{entry}\n")
-    return "appended"
+    appended: list[str] = []
+    already: list[str] = []
+    to_append: list[str] = []
+    for entry in entries:
+        canonical = entry.strip("/")
+        variants = {canonical, canonical + "/", "/" + canonical, "/" + canonical + "/"}
+        if variants & existing_set:
+            already.append(entry)
+        else:
+            to_append.append(entry)
+
+    if to_append:
+        needs_leading_nl = bool(existing) and existing[-1] != ""
+        with gitignore.open("a") as f:
+            if needs_leading_nl:
+                f.write("\n")
+            for entry in to_append:
+                f.write(f"{entry}\n")
+                appended.append(entry)
+
+    return {"status": "ok", "appended": appended, "already_present": already}
 
 
 def _extensions_for(languages: list[str], include_dts: bool = True) -> list[str]:
@@ -126,7 +148,7 @@ def build_index(
     if not root.is_dir():
         raise FileNotFoundError(f"not a directory: {root}")
 
-    output_dir = (output_dir or (root / DEFAULT_OUTPUT_DIRNAME)).resolve()
+    output_dir = (output_dir or root).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     warnings: list[str] = []
@@ -186,11 +208,14 @@ def build_index(
         except FileNotFoundError:
             pass
 
-    try:
-        rel_output = output_dir.relative_to(root)
-        gitignore_status = _ensure_gitignored(root, f"{rel_output}/")
-    except ValueError:
-        gitignore_status = "skipped_external_output_dir"
+    if output_dir == root:
+        gitignore_info = _ensure_gitignored(root, list(GITIGNORE_ENTRIES))
+    else:
+        try:
+            rel = output_dir.relative_to(root)
+            gitignore_info = _ensure_gitignored(root, [f"{rel}/"])
+        except ValueError:
+            gitignore_info = {"status": "skipped_external_output_dir"}
 
     return IndexResult(
         root=root,
@@ -201,13 +226,13 @@ def build_index(
         languages=languages,
         excluded=excludes,
         warnings=warnings,
-        gitignore_status=gitignore_status,
+        gitignore=gitignore_info,
     )
 
 
 def index_status(root: Path, output_dir: Path | None = None) -> dict:
     root = root.resolve()
-    output_dir = (output_dir or (root / DEFAULT_OUTPUT_DIRNAME)).resolve()
+    output_dir = (output_dir or root).resolve()
     artifacts = ["cscope.files", "cscope.out", "cscope.in.out", "cscope.po.out", "tags"]
     status: dict = {
         "root": str(root),

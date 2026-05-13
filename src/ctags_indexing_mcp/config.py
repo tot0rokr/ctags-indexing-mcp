@@ -4,7 +4,7 @@ import json
 import time
 from pathlib import Path
 
-CONFIG_FILENAME = "config.json"
+CONFIG_FILENAME = ".codeindex.config.json"
 
 
 def config_path(output_dir: Path) -> Path:

@@ -295,9 +295,13 @@ Print the following two lines to the user:
 
 ```
 Index a project from your agent with:   "Index this project at <path>"
-After the agent finishes, run:          source <path>/.codeindex/activate.sh
+After the agent finishes, run:          source <path>/codeindex-activate.sh
                                         (or add that to ~/.bashrc to make it permanent)
 ```
+
+If the project is a git repository, the artifact names (cscope.files,
+cscope.out, cscope.in.out, cscope.po.out, tags, codeindex-activate.sh,
+.codeindex.config.json) are also auto-appended to `<path>/.gitignore`.
 
 ---
 
@@ -342,5 +346,5 @@ tags won't resolve; that's expected, not a bug.
   `mcpServers.ctags-indexing` entry, then restart the client.
 - Then: `rm -rf "$INSTALL_DIR"`.
 
-(`.codeindex/` directories inside individual projects are independent — delete
-them by hand if desired.)
+(The cscope/tags artifacts and `codeindex-activate.sh` inside individual
+projects are independent — delete them by hand if desired.)
