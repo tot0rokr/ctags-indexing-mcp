@@ -29,11 +29,16 @@ one-line shell activation that makes `vim` auto-attach the indexes from any cwd.
 
 Hand [`INSTALLATION.md`](./INSTALLATION.md) to your coding agent and ask it
 to follow the guide end-to-end. It is written to be agent-followable and
-**MCP-client-agnostic** — step 4 has one sub-section per client (Claude
-Code, Claude Desktop, Cursor, Continue, Windsurf, plus a generic JSON
-recipe for anything else), so the same file works no matter which agent
-the user is running it from. All steps are idempotent; re-running on an
-already-installed machine just updates and reconnects.
+**MCP-client-agnostic** — step 4 has one sub-section per client:
+
+- CLI-based clients (preferred, one-liner): Claude Code (`claude mcp add`),
+  OpenAI Codex (`codex mcp add`), Gemini CLI (`gemini mcp add`),
+  Amazon Q (`q mcp add`).
+- Config-file clients: Cursor, Windsurf, Continue, Claude Desktop — add the
+  same stdio entry to that client's config and restart it.
+
+All steps are idempotent; re-running on an already-installed machine just
+updates and reconnects.
 
 Concretely, paste this into your agent:
 

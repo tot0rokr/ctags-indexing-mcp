@@ -115,177 +115,138 @@ echo "server boots OK"
 
 ## 4. Register with your MCP client
 
-Every MCP client ultimately consumes the **same** stdio payload:
+Pick the sub-section that matches the client **you are running inside**.
+Sub-sections 4A–4D use each client's own `mcp add` CLI command (preferred —
+no JSON editing). Sub-sections 4E–4H are for clients that don't ship a CLI;
+for those, write the standard stdio entry into the client's config file.
 
-```json
-{
-  "command": "<BIN value from step 3>",
-  "args": [],
-  "env": {}
-}
-```
-
-…stored under the key `mcpServers.ctags-indexing` in some client-specific
-config file (or, for Claude Code, written via a CLI). Pick the sub-section
-that matches your client. All sub-sections are **idempotent** — re-running
-them overwrites the previous registration in place.
-
-Optional: detect which clients look installed on this machine (purely
-informational, does not change anything):
+Optional: detect which clients look installed on this machine:
 
 ```bash
 present=()
-command -v claude >/dev/null                                   && present+=("4A claude-code")
+command -v claude >/dev/null                              && present+=("4A claude-code")
+command -v codex  >/dev/null                              && present+=("4B codex")
+command -v gemini >/dev/null                              && present+=("4C gemini")
+command -v q      >/dev/null                              && present+=("4D amazon-q")
+[[ -d "$HOME/.cursor" ]]                                  && present+=("4E cursor")
+[[ -d "$HOME/.codeium/windsurf" ]]                        && present+=("4F windsurf")
+[[ -d "$HOME/.continue" ]]                                && present+=("4G continue")
 [[ -d "$HOME/Library/Application Support/Claude" \
    || -d "$HOME/.config/Claude" \
-   || -d "$APPDATA/Claude" ]]                                   && present+=("4B claude-desktop")
-[[ -d "$HOME/.cursor" ]]                                        && present+=("4C cursor")
-[[ -d "$HOME/.continue" ]]                                      && present+=("4D continue")
-[[ -d "$HOME/.codeium/windsurf" ]]                              && present+=("4E windsurf")
-printf 'detected:\n'; printf '  %s\n' "${present[@]:-(none — fall back to 4F generic)}"
+   || -d "$APPDATA/Claude" ]]                             && present+=("4H claude-desktop")
+printf 'detected:\n'; printf '  %s\n' "${present[@]:-(none — fall back to 4I generic)}"
 ```
 
-### 4A. Claude Code
+---
+
+### CLI-based registration (preferred)
+
+#### 4A. Claude Code
 
 ```bash
 claude mcp remove -s user ctags-indexing 2>/dev/null || true
 claude mcp add    -s user ctags-indexing -- "$BIN"
-claude mcp list | grep -q "^ctags-indexing" || { echo "not registered"; exit 1; }
-claude mcp get ctags-indexing   # spawns the server briefly for a health check
+claude mcp get    ctags-indexing      # spawns once for a health check
 ```
 
-A healthy `claude mcp get` output ends with `✓ Connected · 5 tools`.
+Healthy output ends with `✓ Connected · 5 tools`.
 
-### 4B. Claude Desktop
-
-Edit the desktop config JSON. The location depends on OS:
-
-| OS      | Path                                                         |
-|---------|--------------------------------------------------------------|
-| macOS   | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Linux   | `~/.config/Claude/claude_desktop_config.json`                |
-| Windows | `%APPDATA%\Claude\claude_desktop_config.json`                |
-
-Idempotent merge with Python (uses the venv we just built so `json` is
-guaranteed available):
+#### 4B. OpenAI Codex CLI
 
 ```bash
-case "$(uname -s)" in
-    Darwin) CFG="$HOME/Library/Application Support/Claude/claude_desktop_config.json" ;;
-    Linux)  CFG="$HOME/.config/Claude/claude_desktop_config.json" ;;
-    *)      CFG="${APPDATA:-$HOME}/Claude/claude_desktop_config.json" ;;
-esac
-mkdir -p "$(dirname "$CFG")"
-"$INSTALL_DIR/.venv/bin/python" - "$CFG" "$BIN" <<'PY'
-import json, os, sys
-cfg_path, bin_path = sys.argv[1], sys.argv[2]
-cfg = {}
-if os.path.exists(cfg_path):
-    with open(cfg_path) as f:
-        try: cfg = json.load(f)
-        except json.JSONDecodeError: cfg = {}
-cfg.setdefault("mcpServers", {})["ctags-indexing"] = {
-    "command": bin_path, "args": [], "env": {},
-}
-with open(cfg_path, "w") as f:
-    json.dump(cfg, f, indent=2)
-print(f"wrote {cfg_path}")
-PY
+codex mcp remove ctags-indexing 2>/dev/null || true
+codex mcp add    ctags-indexing -- "$BIN"
+codex mcp list   # should list ctags-indexing
 ```
 
-**Restart Claude Desktop** so it re-reads the config.
+Stored in `~/.codex/config.toml`.
 
-### 4C. Cursor
+#### 4C. Gemini CLI
 
 ```bash
-CFG="$HOME/.cursor/mcp.json"
-mkdir -p "$(dirname "$CFG")"
-"$INSTALL_DIR/.venv/bin/python" - "$CFG" "$BIN" <<'PY'
-import json, os, sys
-cfg_path, bin_path = sys.argv[1], sys.argv[2]
-cfg = {}
-if os.path.exists(cfg_path):
-    with open(cfg_path) as f:
-        try: cfg = json.load(f)
-        except json.JSONDecodeError: cfg = {}
-cfg.setdefault("mcpServers", {})["ctags-indexing"] = {
-    "command": bin_path, "args": [], "env": {},
-}
-with open(cfg_path, "w") as f:
-    json.dump(cfg, f, indent=2)
-print(f"wrote {cfg_path}")
-PY
+gemini mcp remove ctags-indexing 2>/dev/null || true
+gemini mcp add    ctags-indexing "$BIN"
+gemini mcp list
 ```
 
-**Restart Cursor** (or toggle MCP in Settings → MCP) to pick it up.
+Stored in `~/.gemini/settings.json`. If the current folder is untrusted,
+Gemini will show the server as "Disconnected" — run `gemini trust` once
+inside any directory you actually use the server from.
 
-### 4D. Continue (VS Code / JetBrains)
-
-Continue reads `~/.continue/config.json` (global) or `.continue/config.json`
-(per workspace). The same Python snippet works — choose the path the user
-prefers:
+#### 4D. Amazon Q Developer CLI
 
 ```bash
-CFG="$HOME/.continue/config.json"     # or ".continue/config.json" for project-scoped
-mkdir -p "$(dirname "$CFG")"
-"$INSTALL_DIR/.venv/bin/python" - "$CFG" "$BIN" <<'PY'
-import json, os, sys
-cfg_path, bin_path = sys.argv[1], sys.argv[2]
-cfg = {}
-if os.path.exists(cfg_path):
-    with open(cfg_path) as f:
-        try: cfg = json.load(f)
-        except json.JSONDecodeError: cfg = {}
-cfg.setdefault("mcpServers", {})["ctags-indexing"] = {
-    "command": bin_path, "args": [], "env": {},
-}
-with open(cfg_path, "w") as f:
-    json.dump(cfg, f, indent=2)
-print(f"wrote {cfg_path}")
-PY
+q mcp remove --name ctags-indexing 2>/dev/null || true
+q mcp add    --name ctags-indexing --command "$BIN"
+q mcp list
 ```
 
-Reload Continue (`Cmd/Ctrl+Shift+P` → "Continue: Reload").
+(The same commands work as `qchat mcp …` on older versions of the CLI.)
 
-### 4E. Windsurf (Codeium)
+---
 
-```bash
-CFG="$HOME/.codeium/windsurf/mcp_config.json"
-mkdir -p "$(dirname "$CFG")"
-"$INSTALL_DIR/.venv/bin/python" - "$CFG" "$BIN" <<'PY'
-import json, os, sys
-cfg_path, bin_path = sys.argv[1], sys.argv[2]
-cfg = {}
-if os.path.exists(cfg_path):
-    with open(cfg_path) as f:
-        try: cfg = json.load(f)
-        except json.JSONDecodeError: cfg = {}
-cfg.setdefault("mcpServers", {})["ctags-indexing"] = {
-    "command": bin_path, "args": [], "env": {},
-}
-with open(cfg_path, "w") as f:
-    json.dump(cfg, f, indent=2)
-print(f"wrote {cfg_path}")
-PY
-```
+### Config-file registration (clients without an `mcp add` CLI)
 
-Restart Windsurf.
-
-### 4F. Generic (any other MCP-capable client)
-
-The client almost certainly has a JSON config with an `mcpServers` (or
-similarly named) map. Add:
+For all of these the payload is the standard stdio entry under
+`mcpServers`. Use the JSON snippet below — substitute `<BIN>` with the
+absolute path printed at the end of step 3
+(`<INSTALL_DIR>/.venv/bin/ctags-indexing-mcp`):
 
 ```json
 "ctags-indexing": {
-  "command": "<value of $BIN from step 3>",
+  "command": "<BIN>",
   "args": [],
   "env": {}
 }
 ```
 
-Substitute `$BIN` with the absolute path printed at the end of step 3
-(`<INSTALL_DIR>/.venv/bin/ctags-indexing-mcp`). Restart the client.
+Open the file listed in your sub-section, add the entry under the
+top-level `mcpServers` key (create the key if it doesn't exist), save, and
+**restart the client** so it re-reads the config.
+
+#### 4E. Cursor
+
+Config:
+- Global: `~/.cursor/mcp.json`
+- Per project: `.cursor/mcp.json` in the workspace root (overrides global)
+
+#### 4F. Windsurf (Codeium)
+
+Config:
+- `~/.codeium/windsurf/mcp_config.json` (macOS/Linux)
+- `%USERPROFILE%\.codeium\windsurf\mcp_config.json` (Windows)
+
+Tip: in Windsurf, the Cascade panel's MCPs icon → "Configure" opens this
+file directly in your editor.
+
+#### 4G. Continue (VS Code / JetBrains)
+
+Continue uses **YAML**, not JSON. Add to `~/.continue/config.yaml` (or per
+workspace `.continue/config.yaml`):
+
+```yaml
+mcpServers:
+  - name: ctags-indexing
+    type: stdio
+    command: <BIN>
+```
+
+Reload Continue (`Cmd/Ctrl+Shift+P` → "Continue: Reload").
+
+#### 4H. Claude Desktop
+
+Config path depends on OS:
+
+| OS      | Path                                                              |
+|---------|-------------------------------------------------------------------|
+| macOS   | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Linux   | `~/.config/Claude/claude_desktop_config.json`                     |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json`                     |
+
+#### 4I. Any other MCP-capable client
+
+Follow your client's MCP documentation. The stdio payload above is the
+standard MCP form and works in any compliant client.
 
 ---
 
@@ -357,8 +318,9 @@ runtime dependency, not a Python dependency. Install via the package manager
 **Client doesn't see the server / "Failed to connect"** — Spawn the binary
 manually: `$BIN < /dev/null` — any Python traceback will tell you what's
 wrong (usually a stale venv after a pull; rerun `uv pip install -e .`).
-Also: most clients only re-read their config on restart — make sure you
-restarted Claude Desktop / Cursor / Windsurf / Continue after step 4.
+Also: clients that register via config file (Cursor, Windsurf, Continue,
+Claude Desktop) only re-read it on restart — restart the client after
+editing.
 
 **`Cs db add` does nothing inside nvim** — The user is missing
 `cscope_maps.nvim`. The activation script is wrapped in `silent!` so it won't
@@ -371,9 +333,13 @@ directory). If the user opens a file that lives **outside** the project root,
 tags won't resolve; that's expected, not a bug.
 
 **Want to uninstall** —
-- Claude Code: `claude mcp remove -s user ctags-indexing`
-- Other clients: open the same config JSON you edited in step 4 and remove
-  the `mcpServers.ctags-indexing` entry, then restart the client.
+- CLI clients: `claude mcp remove -s user ctags-indexing` /
+  `codex mcp remove ctags-indexing` /
+  `gemini mcp remove ctags-indexing` /
+  `q mcp remove --name ctags-indexing`
+- Config-file clients (Cursor / Windsurf / Continue / Claude Desktop): open
+  the same file you edited in step 4 and remove the
+  `mcpServers.ctags-indexing` entry, then restart the client.
 - Then: `rm -rf "$INSTALL_DIR"`.
 
 (`.codeindex/` directories inside individual projects are independent — delete
