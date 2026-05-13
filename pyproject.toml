@@ -29,6 +29,8 @@ Homepage = "https://github.com/tot0rokr/ctags-indexing-mcp"
 Repository = "https://github.com/tot0rokr/ctags-indexing-mcp"
 Issues = "https://github.com/tot0rokr/ctags-indexing-mcp/issues"
 
+[project.scripts]
+ctags-indexing-mcp = "ctags_indexing_mcp.server:main"
 
 [build-system]
 requires = ["hatchling"]
