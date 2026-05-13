@@ -27,40 +27,20 @@ any cwd.
 
 ## Install
 
-```bash
-git clone <repo> ~/work/ctags-indexing-mcp
-cd ~/work/ctags-indexing-mcp
-uv venv && uv pip install -e .
-```
+Hand [`INSTALLATION.md`](./INSTALLATION.md) to your coding agent (Claude Code,
+Cursor, etc.) and ask it to follow the guide end-to-end. It is written to be
+agent-followable: prerequisite probe, clone, venv + editable install, MCP
+registration, and a smoke test — all idempotent. Re-running it on an
+already-installed machine just updates and reconnects.
 
-## Register with Claude Code
+Concretely, in Claude Code:
 
-Add to `~/.claude/mcp.json` (or the equivalent settings file):
+> "Read INSTALLATION.md from https://github.com/tot0rokr/ctags-indexing-mcp
+> and install + register the MCP server."
 
-```json
-{
-  "mcpServers": {
-    "ctags-indexing": {
-      "command": "/home/<you>/work/ctags-indexing-mcp/.venv/bin/ctags-indexing-mcp"
-    }
-  }
-}
-```
-
-Or, equivalently with `uv`:
-
-```json
-{
-  "mcpServers": {
-    "ctags-indexing": {
-      "command": "uv",
-      "args": ["--directory", "/home/<you>/work/ctags-indexing-mcp", "run", "ctags-indexing-mcp"]
-    }
-  }
-}
-```
-
-Restart Claude Code to pick up the server.
+Manual install is also fine if you prefer; the same commands are in
+INSTALLATION.md. After installation, restart your MCP client so it picks up
+the new server.
 
 ## Typical session
 
