@@ -22,6 +22,7 @@ class IndexResult:
     languages: list[str]
     excluded: list[str]
     warnings: list[str]
+    gitignore_status: str = "not_a_git_repo"
 
     def to_dict(self) -> dict:
         return {
@@ -33,7 +34,39 @@ class IndexResult:
             "languages": self.languages,
             "excluded": self.excluded,
             "warnings": self.warnings,
+            "gitignore_status": self.gitignore_status,
         }
+
+
+def _is_git_repo(root: Path) -> bool:
+    return (root / ".git").exists()
+
+
+def _ensure_gitignored(root: Path, entry: str) -> str:
+    """Append `entry` to <root>/.gitignore if the project is a git repo and the
+    entry (or an equivalent variant) is not already listed. Returns one of:
+      - "not_a_git_repo"
+      - "already_present"
+      - "appended"
+    """
+    if not _is_git_repo(root):
+        return "not_a_git_repo"
+
+    gitignore = root / ".gitignore"
+    canonical = entry.strip("/")
+    variants = {canonical, canonical + "/", "/" + canonical, "/" + canonical + "/"}
+
+    existing = gitignore.read_text().splitlines() if gitignore.is_file() else []
+    for line in existing:
+        if line.strip() in variants:
+            return "already_present"
+
+    needs_leading_nl = bool(existing) and existing[-1] != ""
+    with gitignore.open("a") as f:
+        if needs_leading_nl:
+            f.write("\n")
+        f.write(f"{entry}\n")
+    return "appended"
 
 
 def _extensions_for(languages: list[str], include_dts: bool = True) -> list[str]:
@@ -153,6 +186,12 @@ def build_index(
         except FileNotFoundError:
             pass
 
+    try:
+        rel_output = output_dir.relative_to(root)
+        gitignore_status = _ensure_gitignored(root, f"{rel_output}/")
+    except ValueError:
+        gitignore_status = "skipped_external_output_dir"
+
     return IndexResult(
         root=root,
         output_dir=output_dir,
@@ -162,6 +201,7 @@ def build_index(
         languages=languages,
         excluded=excludes,
         warnings=warnings,
+        gitignore_status=gitignore_status,
     )
 
 

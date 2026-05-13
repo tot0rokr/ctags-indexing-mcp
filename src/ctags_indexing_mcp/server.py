@@ -39,14 +39,23 @@ def index_create(
     output_dir: Optional[str] = None,
 ) -> dict:
     """Build cscope and ctags indexes for a project. Writes artifacts to
-    `<project>/.codeindex/` by default. Auto-detects languages and excludes
-    when not provided.
+    `<path>/.codeindex/` by default (always scoped to the given project,
+    never a global cache). Auto-detects languages and excludes when not
+    provided.
+
+    When `path` is a git repository, the relative output directory (e.g.
+    `.codeindex/`) is appended to `<path>/.gitignore` if it isn't already
+    listed. The returned dict includes `gitignore_status`:
+      - "appended"                  : line was added
+      - "already_present"           : line already there
+      - "not_a_git_repo"            : skipped (no .git in `path`)
+      - "skipped_external_output_dir": output_dir is outside `path`
 
     Args:
         path: Project root directory.
         languages: Subset of {"c","cpp","asm","python"}. Default: auto-detect.
         excludes: Directory basenames to skip. Default: auto-detect.
-        output_dir: Where to put cscope/tags. Default: `<project>/.codeindex/`.
+        output_dir: Where to put cscope/tags. Default: `<path>/.codeindex/`.
     """
     root = Path(path).expanduser().resolve()
     analysis = analyze_project(root)
