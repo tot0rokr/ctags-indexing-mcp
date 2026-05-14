@@ -7,14 +7,14 @@ one-line shell activation that makes `vim` auto-attach the indexes from any cwd.
 
 ## What it does
 
-- **`analyze(path?)`** — scan a project, return language counts, detected
-  build systems (cmake/meson/cargo/npm/yocto/…), and a recommended exclude
-  list. Read-only.
-- **`index_create(path?, languages?, excludes?, output_dir?)`** — build the
-  indexes. Auto-detects languages/excludes if not given. Writes the
-  artifacts **directly into the project root**:
+- **`index_create(path?, languages?, excludes?, output_dir?, dry_run?)`** —
+  one-shot: analyzes the project (language counts, build systems, recommended
+  excludes) AND builds the cscope/ctags indexes. The response always
+  contains an `analysis` block. Pass `dry_run=True` for a read-only
+  preview (no files written). Otherwise writes artifacts **directly into
+  the project root**:
   `<path>/{cscope.files, cscope.out, cscope.in.out, cscope.po.out, tags, .codeindex.config.json}`.
-  When `<path>` is a git repository, those names are appended to
+  When `<path>` is a git repo, those names are appended to
   `<path>/.gitignore` automatically (idempotent).
 - **`index_regen(path?)`** — rebuild using the previously saved
   `.codeindex.config.json`.

@@ -34,68 +34,68 @@ def _resolve_output(root: Path, output_dir: Optional[str]) -> Path:
 
 
 @mcp.tool()
-def analyze(path: Optional[str] = None) -> dict:
-    """Scan a project directory and report language/file-counts/build-systems
-    and a recommended exclude list. Read-only; does not write anything to
-    disk.
-
-    IMPORTANT: figure out the user's project root yourself (e.g. from the
-    user's current shell, the path of an open file, or a Git toplevel) and
-    pass it as `path`. Only omit `path` if you genuinely have no clue — in
-    that case the server falls back to its own cwd, which usually mirrors
-    the directory the user was in when the MCP client launched the server,
-    but is not guaranteed to be the right project. The response includes
-    `path_source` ("explicit" or "cwd_fallback") so you can confirm.
-    """
-    root, source = _resolve_path(path)
-    result = analyze_project(root).to_dict()
-    result["path_source"] = source
-    return result
-
-
-@mcp.tool()
 def index_create(
     path: Optional[str] = None,
     languages: Optional[list[str]] = None,
     excludes: Optional[list[str]] = None,
     output_dir: Optional[str] = None,
+    dry_run: bool = False,
 ) -> dict:
-    """Build cscope and ctags indexes for a project. Artifacts are written
-    **directly into the project root** by default (cscope.files, cscope.out,
-    cscope.in.out, cscope.po.out, tags, codeindex-activate.sh on
-    editor_setup, .codeindex.config.json). Never a global cache. The result
-    is always per-project — pass a different `path` for a different project.
+    """Analyze a project AND build cscope/ctags indexes in one call.
+
+    The response always includes an `analysis` block (language counts,
+    detected build systems, recommended exclude list, total source files).
+    When `dry_run=True`, only the analysis is returned and nothing is
+    written to disk — useful for previewing what would be indexed without
+    paying the time/space cost.
+
+    Artifacts are written **directly into the project root** by default
+    (cscope.files, cscope.out, cscope.in.out, cscope.po.out, tags,
+    .codeindex.config.json — plus codeindex-activate.sh when you later
+    call editor_setup). Never a global cache. Per-project — pass a
+    different `path` for a different project.
 
     IMPORTANT (project root): figure out the user's project root yourself
     (Git toplevel, the directory containing pyproject.toml/CMakeLists.txt,
-    the open file's nearest ancestor, etc.) and pass it as `path`. If `path`
-    is omitted, the server uses its own cwd as a last-resort fallback —
-    convenient when the MCP client spawns the server in the user's working
-    directory, but not always correct. The response's `path_source` field
-    tells you which one was used.
+    the open file's nearest ancestor, etc.) and pass it as `path`. If
+    `path` is omitted, the server falls back to its own cwd — convenient
+    when the MCP client spawns the server in the user's working directory,
+    but not always correct. The response's `path_source` field tells you
+    which one was used.
 
-    .gitignore behavior: when `path` is a git repository, the artifact names
-    are appended to `<path>/.gitignore` (idempotent — existing entries are
-    left alone). When `output_dir` is given and points at a subdirectory of
-    `path`, that subdirectory is gitignored instead. The result has a
-    `gitignore` field with `status`/`appended`/`already_present`.
+    .gitignore behavior (dry_run=False only): when `path` is a git
+    repository, the artifact names are appended to `<path>/.gitignore`
+    (idempotent — existing entries are left alone). When `output_dir` is
+    given and points at a subdirectory of `path`, that subdirectory is
+    gitignored instead. The result has a `gitignore` field with
+    `status`/`appended`/`already_present`.
 
     Args:
         path: Project root. Default: server cwd (fallback).
         languages: Subset of {"c","cpp","asm","python"}. Default: auto-detect.
         excludes: Directory basenames to skip. Default: auto-detect.
         output_dir: Where to put artifacts. Default: `path` itself (root).
+        dry_run: If True, run the analysis only and return without writing
+            cscope/ctags/config/.gitignore. Default: False.
     """
     root, source = _resolve_path(path)
     analysis = analyze_project(root)
+    response: dict = {
+        "root": str(root),
+        "path_source": source,
+        "analysis": analysis.to_dict(),
+        "dry_run": dry_run,
+    }
+    if dry_run:
+        return response
+
     langs = languages or analysis.detected_languages
     excl = excludes or analysis.recommended_excludes
     out = _resolve_output(root, output_dir)
     result = build_index(root, langs, excl, out)
     save_config(out, langs, excl)
-    result_dict = result.to_dict()
-    result_dict["path_source"] = source
-    return result_dict
+    response.update(result.to_dict())
+    return response
 
 
 @mcp.tool()

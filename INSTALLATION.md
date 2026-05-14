@@ -270,8 +270,8 @@ async def call(name, **a):
     return json.loads(contents[0].text)
 
 async def main(path):
-    a = await call("analyze", path=path)
-    print(f"analyze: {a['total_source_files']} files, langs={a['detected_languages']}")
+    a = await call("index_create", path=path, dry_run=True)
+    print(f"preview: {a['analysis']['total_source_files']} files, langs={a['analysis']['detected_languages']}")
     r = await call("index_create", path=path)
     print(f"index_create: cscope={r['cscope_built']} ctags={r['ctags_built']} files={r['files_indexed']}")
     s = await call("index_status", path=path)
