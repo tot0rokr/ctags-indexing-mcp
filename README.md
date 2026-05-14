@@ -22,6 +22,11 @@ one-line shell activation that makes `vim` auto-attach the indexes from any cwd.
 - **`editor_setup(path?)`** — generate `<path>/codeindex-activate.sh`. Source
   it once per shell. After sourcing, every `vim` invocation auto-attaches
   `tags` and the cscope DB regardless of cwd.
+- **`self_update()`** — `git pull --ff-only` + `pip install -e .` on the
+  server's own source checkout. Use when the user says "update the MCP".
+  Reports the before/after commit and prompts the user to restart the MCP
+  client (the running server process keeps the old code until then). No-op
+  for non-editable / PyPI installs.
 
 The agent calling these tools is expected to figure out the user's project
 root itself and pass it as `path`. If `path` is omitted, the server falls
@@ -59,6 +64,40 @@ Concretely, paste this into your agent:
 Manual install is also fine if you prefer; the same commands are in
 INSTALLATION.md. After installation, restart your MCP client so it picks up
 the new server.
+
+## Update
+
+Three ways, pick whichever is convenient:
+
+**A. From within your MCP client (easiest).** Just ask:
+
+> "Update the ctags-indexing MCP."
+
+The agent calls the `self_update` tool, which runs `git pull --ff-only`
+followed by `pip install -e .` on the server's own checkout, reports the
+before/after commit, and tells you to restart the client. Restart the MCP
+client (quit and reopen Claude Code / Cursor / etc.) so a fresh server
+process is spawned with the new code — the running process keeps the old
+code in memory until then.
+
+**B. Manual (one liner).**
+
+```bash
+cd /path/to/ctags-indexing-mcp && git pull --ff-only && uv pip install -e .
+```
+
+Then restart your MCP client.
+
+**C. Re-run INSTALLATION.md.** Steps 1–3 of [`INSTALLATION.md`](./INSTALLATION.md)
+are idempotent and double as an update path. Step 4 (registration) is
+already done, so skip it.
+
+### When is restart required?
+
+Always, in practice. The tools the client sees, their signatures, and the
+running logic all come from the server process that was spawned at client
+startup. New code lands on disk, but the live server keeps using the old
+copy until you restart the client and it spawns a new one.
 
 ## Typical session
 

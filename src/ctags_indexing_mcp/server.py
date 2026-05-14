@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -11,6 +14,17 @@ from .editor import generate_activate_script
 from .config import save_config, load_config
 
 mcp = FastMCP("ctags-indexing")
+
+
+def _repo_root() -> Optional[Path]:
+    """Locate the source-tree root of this package, if installed editably.
+    Returns None when running from a non-editable wheel (e.g. installed
+    from PyPI) — self_update is only meaningful for editable checkouts."""
+    src_dir = Path(__file__).resolve().parent      # .../src/ctags_indexing_mcp
+    candidate = src_dir.parent.parent              # .../<repo>
+    if (candidate / "pyproject.toml").is_file() and (candidate / ".git").exists():
+        return candidate
+    return None
 
 
 def _resolve_path(path: Optional[str]) -> tuple[Path, str]:
@@ -149,6 +163,98 @@ def editor_setup(path: Optional[str] = None, output_dir: Optional[str] = None) -
             f"source {activate}"
         ),
         "path_source": source,
+    }
+
+
+@mcp.tool()
+def self_update() -> dict:
+    """Pull the latest source for this MCP server (`git pull --ff-only`)
+    and reinstall the package in place. Call this when the user explicitly
+    asks to update / upgrade the ctags-indexing MCP server — do not call
+    speculatively, since the running server keeps the old code in memory
+    until the MCP client restarts.
+
+    Returns:
+        status: one of
+            "already_up_to_date" — HEAD did not move; nothing reinstalled.
+            "ok"                 — pulled and reinstalled.
+            "not_editable_checkout" — installed from PyPI or similar; no
+                source repo to update. The user must reinstall manually.
+            "git_error" / "pip_error" — see `detail` for the captured
+                stderr/stdout.
+        before, after: commit SHAs before and after the pull (when known).
+        repo: absolute path of the source checkout being updated.
+        pip_install: "ok" | "skipped (no changes)" | error string.
+        restart_required: True when HEAD moved; the MCP client must spawn
+            a fresh server process to load the new code (tools, schemas,
+            and logic on the live server reflect the old code).
+        restart_hint: human-readable instruction to print to the user when
+            restart_required is True.
+    """
+    repo = _repo_root()
+    if repo is None:
+        return {
+            "status": "not_editable_checkout",
+            "detail": (
+                "Could not locate a source checkout next to this package "
+                "(no pyproject.toml + .git found near "
+                f"{Path(__file__).resolve()}). Likely installed from PyPI; "
+                "reinstall manually (`pip install -U ctags-indexing-mcp` or "
+                "`pipx upgrade ctags-indexing-mcp`)."
+            ),
+        }
+
+    def _run(cmd: list[str]) -> subprocess.CompletedProcess:
+        return subprocess.run(cmd, cwd=repo, capture_output=True, text=True)
+
+    before = _run(["git", "rev-parse", "HEAD"])
+    if before.returncode != 0:
+        return {"status": "git_error", "stage": "rev-parse",
+                "detail": before.stderr.strip(), "repo": str(repo)}
+    before_sha = before.stdout.strip()
+
+    pull = _run(["git", "pull", "--ff-only"])
+    if pull.returncode != 0:
+        return {"status": "git_error", "stage": "pull",
+                "before": before_sha, "repo": str(repo),
+                "detail": (pull.stderr or pull.stdout).strip()}
+
+    after = _run(["git", "rev-parse", "HEAD"])
+    after_sha = after.stdout.strip()
+
+    if before_sha == after_sha:
+        return {
+            "status": "already_up_to_date",
+            "before": before_sha,
+            "after": after_sha,
+            "repo": str(repo),
+            "pip_install": "skipped (no changes)",
+            "restart_required": False,
+        }
+
+    if shutil.which("uv"):
+        installer = ["uv", "pip", "install", "-e", "."]
+    else:
+        installer = [sys.executable, "-m", "pip", "install", "-e", "."]
+    pip = _run(installer)
+    if pip.returncode != 0:
+        return {"status": "pip_error",
+                "before": before_sha, "after": after_sha, "repo": str(repo),
+                "installer": " ".join(installer),
+                "detail": (pip.stderr or pip.stdout).strip()}
+
+    return {
+        "status": "ok",
+        "before": before_sha,
+        "after": after_sha,
+        "repo": str(repo),
+        "pip_install": "ok",
+        "restart_required": True,
+        "restart_hint": (
+            "Restart your MCP client (e.g. quit and reopen Claude Code) so "
+            "it spawns a fresh ctags-indexing server process. The currently "
+            "running process is still on the old code until then."
+        ),
     }
 
 
